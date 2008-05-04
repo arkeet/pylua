@@ -5,20 +5,13 @@ from lua import Lua
 def pydouble(x):
     return 2 * x
 
-def leaktest():
-    global lua
-    for i in xrange(10000000):
-        #lua.eval('return function(x, y) return x, y end')
-        lua.eval('collectgarbage("collect")')
-        a = lua.eval('return pair')
-
 def main():
-    global lua
     lua = Lua()
     print lua
 
     lua.openlibs()
 
+    print '-- basics'
     lua.eval('a = 5')
     print lua.eval('return a')
     print lua.getglobal('a')
@@ -34,11 +27,12 @@ def main():
     print double(2)
 
     print '-- id'
-    id = lua.eval('return function(x) return x end')
+    lua.eval('function id(x) return x end')
+    id = lua.eval('return id')
     print id
-    print id(6)
     print id(id)
-    print id(lua)
+    print id(6)
+    #print id(lua)
 
     print '-- pair'
     lua.eval('function pair(x, y) return x, y end')
@@ -54,6 +48,16 @@ def main():
     lua.eval('print(pydouble)')
     lua.eval('print(pydouble(4))')
     print lua.eval('return pydouble(4)')
+
+    leaktest = False
+    leaktest = True
+    if leaktest:
+        for i in xrange(1, 1000001):
+            if (i % 10000 == 0):
+                print '%d loops' % i
+            a = lua.eval('return function(x, y) return x, y end')
+            lua.eval('collectgarbage("collect")')
+            lua.eval('return collectgarbage')
 
 if __name__ == '__main__':
     main()
