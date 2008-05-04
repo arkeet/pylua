@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 
-from lua import Lua
+from lua import LuaState
 
 def pydouble(x):
     return 2 * x
 
 def main():
-    lua = Lua()
+    lua = LuaState()
     print lua
 
     lua.openlibs()

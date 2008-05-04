@@ -1,8 +1,10 @@
+#include "luamodule.h"
 #include <Python.h>
 #include <structmember.h>
-
 #include <lua.h>
 #include <lauxlib.h>
+
+/* Debug functions **********************************************************/
 
 #define LOG
 #ifdef LOG
@@ -21,34 +23,16 @@ int Log(const char *format, ...)
 #endif
 int LogObj(const char *str, void *o)
 {
+    int ret;
     PyObject *repr = PyObject_Repr((PyObject *)o);
-    Log("  Obj %s %s\n", str, PyString_AsString(repr));
+    ret = Log("  Obj %s %s\n", str, PyString_AsString(repr));
     Py_XDECREF(repr);
+    return ret;
 }
 int LogLuaTop(const char *str, lua_State *L)
 {
-    Log("  Top %s %d\n", str, lua_gettop(L));
+    return Log("  Top %s %d\n", str, lua_gettop(L));
 }
-
-/* Type structs *************************************************************/
-
-typedef struct
-{
-    PyObject_HEAD
-    lua_State *L;
-} Lua;
-
-typedef struct
-{
-    PyObject_HEAD
-    Lua *lua;
-} LuaFunction;
-
-typedef struct
-{
-    PyObject_HEAD
-    Lua *lua;
-} LuaTable;
 
 /* LuaFunction type *********************************************************/
 
@@ -70,9 +54,6 @@ static int LuaFunction_init(LuaFunction *self, PyObject *args, PyObject *kwds)
     return -1;
 }
 
-static void lua_pushpyfunction(lua_State *L, LuaFunction *f);
-static int Lua_pushpython(Lua *lua, PyObject *o);
-static PyObject *Lua_topython_multiple(Lua *lua, int n);
 static PyObject *LuaFunction_call(LuaFunction *self, PyObject *args, PyObject
         *kwds)
 {
@@ -153,7 +134,154 @@ static PyTypeObject LuaFunctionType = {
     PyType_GenericNew,          /*tp_new*/
 };
 
-/* utility functions ********************************************************/
+/* LuaState type ************************************************************/
+
+static void LuaState_dealloc(LuaState *self)
+{
+    lua_close(self->L);
+    self->ob_type->tp_free(self);
+}
+
+static int LuaState_init(LuaState *self, PyObject *args, PyObject *kwds)
+{
+    self->L = luaL_newstate();
+    return 0;
+}
+
+static PyMemberDef LuaState_members[] = {
+    {NULL}
+};
+
+static PyObject *LuaState_openlibs(LuaState *self)
+{
+    luaL_openlibs(self->L);
+    Py_RETURN_NONE;
+}
+
+static PyObject *LuaState_gettop(LuaState *self)
+{
+    return PyInt_FromSsize_t(lua_gettop(self->L));
+}
+
+static PyObject *LuaState_eval(LuaState *self, PyObject *args)
+{
+    char *code;
+
+    int status;
+    int oldtop, numresults;
+    PyObject *result;
+
+    if (!PyArg_ParseTuple(args, "s", &code))
+        return NULL;
+
+    oldtop = lua_gettop(self->L);
+
+    if (luaL_loadstring(self->L, code))
+    {
+        PyErr_SetString(PyExc_SyntaxError, "error loading Lua code");
+        return NULL;
+    }
+
+    if (lua_pcall(self->L, 0, LUA_MULTRET, 0))
+    {
+        lua_pushstring(self->L, "lua error: ");
+        lua_insert(self->L, -2);
+        lua_concat(self->L, 2);
+        PyErr_SetString(PyExc_RuntimeError, lua_tostring(self->L, -1));
+        lua_pop(self->L, 1);
+        return NULL;
+    }
+
+    numresults = lua_gettop(self->L) - oldtop;
+
+    result = Lua_topython_multiple(self, numresults);
+    lua_pop(self->L, numresults);
+    return result;
+}
+
+static PyObject *LuaState_getglobal(LuaState *self, PyObject *args)
+{
+    const char *name;
+    PyObject *ret;
+    if (!PyArg_ParseTuple(args, "s", &name))
+        return NULL;
+    lua_getglobal(self->L, name);
+    ret = Lua_topython(self, -1);
+    lua_pop(self->L, 1);
+    return ret;
+}
+
+static PyObject *LuaState_setglobal(LuaState *self, PyObject *args)
+{
+    const char *name;
+    PyObject *set;
+    int num;
+
+    if (!PyArg_ParseTuple(args, "sO", &name, &set))
+        return NULL;
+    num = Lua_pushpython(self, set);
+    lua_pop(self->L, num - 1);
+    lua_setglobal(self->L, name);
+    Py_RETURN_NONE;
+}
+
+static PyMethodDef LuaState_methods[] = {
+    {"openlibs", (PyCFunction)LuaState_openlibs, METH_NOARGS,
+        "Load the Lua libraries."},
+    {"gettop", (PyCFunction)LuaState_gettop, METH_NOARGS,
+        "(debug) Gets the top index of the Lua stack."},
+    {"eval", (PyCFunction)LuaState_eval, METH_VARARGS,
+        "Run a piece of Lua code."},
+    {"getglobal", (PyCFunction)LuaState_getglobal, METH_VARARGS,
+        "Gets a global variable."},
+    {"setglobal", (PyCFunction)LuaState_setglobal, METH_VARARGS,
+        "Sets a global variable."},
+    {NULL}
+};
+
+static PyTypeObject LuaStateType = {
+    PyObject_HEAD_INIT(NULL)
+    0,                          /*ob_size*/
+    "lua.LuaState",             /*tp_name*/
+    sizeof(LuaState),           /*tp_basicsize*/
+    0,                          /*tp_itemsize*/
+    (destructor)LuaState_dealloc, /*tp_dealloc*/
+    0,                          /*tp_print*/
+    0,                          /*tp_getattr*/
+    0,                          /*tp_setattr*/
+    0,                          /*tp_compare*/
+    0,                          /*tp_repr*/
+    0,                          /*tp_as_number*/
+    0,                          /*tp_as_sequence*/
+    0,                          /*tp_as_mapping*/
+    0,                          /*tp_hash */
+    0,                          /*tp_call*/
+    0,                          /*tp_str*/
+    0,                          /*tp_getattro*/
+    0,                          /*tp_setattro*/
+    0,                          /*tp_as_buffer*/
+    Py_TPFLAGS_DEFAULT,         /*tp_flags*/
+    "Lua state objects",        /*tp_doc*/
+    0,                          /*tp_traverse*/
+    0,                          /*tp_clear*/
+    0,                          /*tp_richcompare*/
+    0,                          /*tp_weaklistoffset*/
+    0,                          /*tp_iter*/
+    0,                          /*tp_iternext*/
+    LuaState_methods,           /*tp_methods*/
+    LuaState_members,           /*tp_members*/
+    0,                          /*tp_getset*/
+    0,                          /*tp_base*/
+    0,                          /*tp_dict*/
+    0,                          /*tp_descr_get*/
+    0,                          /*tp_descr_set*/
+    0,                          /*tp_dictoffset*/
+    (initproc)LuaState_init,    /*tp_init*/
+    0,                          /*tp_alloc*/
+    PyType_GenericNew,          /*tp_new*/
+};
+
+/* Utility functions ********************************************************/
 
 static void lua_pushpyfunction(lua_State *L, LuaFunction *f)
 {
@@ -178,10 +306,9 @@ static int lua_fn_pygc(lua_State *L)
     return 0;
 }
 
-static PyObject *Lua_topyobject(Lua *lua, int index)
+static PyObject *lua_topyobject(lua_State *L, int index)
 {
     PyObject *result;
-    lua_State *L = lua->L;
 
     if (!lua_isuserdata(L, index) || !lua_getmetatable(L, index))
     {
@@ -200,7 +327,7 @@ static PyObject *Lua_topyobject(Lua *lua, int index)
     return result;
 }
 
-static PyObject *Lua_topyfunction(Lua *lua, int index)
+static PyObject *Lua_topyfunction(LuaState *lua, int index)
 {
     LuaFunction *f;
     lua_State *L = lua->L;
@@ -226,14 +353,13 @@ static PyObject *Lua_topyfunction(Lua *lua, int index)
     return (PyObject *)f;
 }
 
-static PyObject *Lua_topython_tuple(Lua *lua, int n);
 static int lua_fn_pycall(lua_State *L)
 {
     PyObject *o, *args, *ret;
-    Lua *lua;
+    LuaState *lua;
     int i, nargs;
 
-    lua = (Lua *)lua_touserdata(L, lua_upvalueindex(1));
+    lua = (LuaState *)lua_touserdata(L, lua_upvalueindex(1));
     o = *(PyObject **)lua_touserdata(L, 1);
     if (!PyCallable_Check(o))
     {
@@ -248,7 +374,7 @@ static int lua_fn_pycall(lua_State *L)
     return Lua_pushpython(lua, ret);
 }
 
-static int Lua_pushpython(Lua *lua, PyObject *o)
+static int Lua_pushpython(LuaState *lua, PyObject *o)
 {
     PyObject **userdata;
     lua_State *L = lua->L;
@@ -323,7 +449,7 @@ static int Lua_pushpython(Lua *lua, PyObject *o)
     return 1;
 }
 
-static PyObject *Lua_topython(Lua *lua, int index)
+static PyObject *Lua_topython(LuaState *lua, int index)
 {
     size_t len;
     const char *str;
@@ -351,7 +477,7 @@ static PyObject *Lua_topython(Lua *lua, int index)
         case LUA_TFUNCTION:
             return Lua_topyfunction(lua, index);
         case LUA_TUSERDATA:
-            result = Lua_topyobject(lua, index);
+            result = lua_topyobject(L, index);
             if (result != NULL)
                 return result;
             return Py_BuildValue("s", "lua userdata");
@@ -362,7 +488,7 @@ static PyObject *Lua_topython(Lua *lua, int index)
     }
 }
 
-static PyObject *Lua_topython_tuple(Lua *lua, int n)
+static PyObject *Lua_topython_tuple(LuaState *lua, int n)
 {
     PyObject *result;
     int i;
@@ -373,7 +499,7 @@ static PyObject *Lua_topython_tuple(Lua *lua, int n)
     return result;
 }
 
-static PyObject *Lua_topython_multiple(Lua *lua, int n)
+static PyObject *Lua_topython_multiple(LuaState *lua, int n)
 {
     if (n == 0)
         Py_RETURN_NONE;
@@ -382,152 +508,6 @@ static PyObject *Lua_topython_multiple(Lua *lua, int n)
     else
         return Lua_topython_tuple(lua, n);
 }
-
-/* LuaState type ************************************************************/
-
-static void Lua_dealloc(Lua *self)
-{
-    lua_close(self->L);
-}
-
-static int Lua_init(Lua *self, PyObject *args, PyObject *kwds)
-{
-    self->L = luaL_newstate();
-    return 0;
-}
-
-static PyMemberDef Lua_members[] = {
-    {NULL}
-};
-
-static PyObject *Lua_openlibs(Lua *self)
-{
-    luaL_openlibs(self->L);
-    Py_RETURN_NONE;
-}
-
-static PyObject *Lua_gettop(Lua *self)
-{
-    return PyInt_FromSsize_t(lua_gettop(self->L));
-}
-
-static PyObject *Lua_eval(Lua *self, PyObject *args)
-{
-    char *code;
-
-    int status;
-    int oldtop, numresults;
-    PyObject *result;
-
-    if (!PyArg_ParseTuple(args, "s", &code))
-        return NULL;
-
-    oldtop = lua_gettop(self->L);
-
-    if (luaL_loadstring(self->L, code))
-    {
-        PyErr_SetString(PyExc_SyntaxError, "error loading Lua code");
-        return NULL;
-    }
-
-    if (lua_pcall(self->L, 0, LUA_MULTRET, 0))
-    {
-        lua_pushstring(self->L, "lua error: ");
-        lua_insert(self->L, -2);
-        lua_concat(self->L, 2);
-        PyErr_SetString(PyExc_RuntimeError, lua_tostring(self->L, -1));
-        lua_pop(self->L, 1);
-        return NULL;
-    }
-
-    numresults = lua_gettop(self->L) - oldtop;
-
-    result = Lua_topython_multiple(self, numresults);
-    lua_pop(self->L, numresults);
-    return result;
-}
-
-static PyObject *Lua_getglobal(Lua *self, PyObject *args)
-{
-    const char *name;
-    PyObject *ret;
-    if (!PyArg_ParseTuple(args, "s", &name))
-        return NULL;
-    lua_getglobal(self->L, name);
-    ret = Lua_topython(self, -1);
-    lua_pop(self->L, 1);
-    return ret;
-}
-
-static PyObject *Lua_setglobal(Lua *self, PyObject *args)
-{
-    const char *name;
-    PyObject *set;
-    int num;
-
-    if (!PyArg_ParseTuple(args, "sO", &name, &set))
-        return NULL;
-    num = Lua_pushpython(self, set);
-    lua_pop(self->L, num - 1);
-    lua_setglobal(self->L, name);
-    Py_RETURN_NONE;
-}
-
-static PyMethodDef Lua_methods[] = {
-    {"openlibs", (PyCFunction)Lua_openlibs, METH_NOARGS,
-        "Load the Lua libraries."},
-    {"gettop", (PyCFunction)Lua_gettop, METH_NOARGS,
-        "(debug) Gets the top index of the Lua stack."},
-    {"eval", (PyCFunction)Lua_eval, METH_VARARGS,
-        "Run a piece of Lua code."},
-    {"getglobal", (PyCFunction)Lua_getglobal, METH_VARARGS,
-        "Gets a global variable."},
-    {"setglobal", (PyCFunction)Lua_setglobal, METH_VARARGS,
-        "Sets a global variable."},
-    {NULL}
-};
-
-static PyTypeObject LuaType = {
-    PyObject_HEAD_INIT(NULL)
-    0,                          /*ob_size*/
-    "lua.Lua",                  /*tp_name*/
-    sizeof(Lua),                /*tp_basicsize*/
-    0,                          /*tp_itemsize*/
-    (destructor)Lua_dealloc,    /*tp_dealloc*/
-    0,                          /*tp_print*/
-    0,                          /*tp_getattr*/
-    0,                          /*tp_setattr*/
-    0,                          /*tp_compare*/
-    0,                          /*tp_repr*/
-    0,                          /*tp_as_number*/
-    0,                          /*tp_as_sequence*/
-    0,                          /*tp_as_mapping*/
-    0,                          /*tp_hash */
-    0,                          /*tp_call*/
-    0,                          /*tp_str*/
-    0,                          /*tp_getattro*/
-    0,                          /*tp_setattro*/
-    0,                          /*tp_as_buffer*/
-    Py_TPFLAGS_DEFAULT,         /*tp_flags*/
-    "Lua state objects",        /*tp_doc*/
-    0,                          /*tp_traverse*/
-    0,                          /*tp_clear*/
-    0,                          /*tp_richcompare*/
-    0,                          /*tp_weaklistoffset*/
-    0,                          /*tp_iter*/
-    0,                          /*tp_iternext*/
-    Lua_methods,                /*tp_methods*/
-    Lua_members,                /*tp_members*/
-    0,                          /*tp_getset*/
-    0,                          /*tp_base*/
-    0,                          /*tp_dict*/
-    0,                          /*tp_descr_get*/
-    0,                          /*tp_descr_set*/
-    0,                          /*tp_dictoffset*/
-    (initproc)Lua_init,         /*tp_init*/
-    0,                          /*tp_alloc*/
-    PyType_GenericNew,          /*tp_new*/
-};
 
 /* lua module ***************************************************************/
 
@@ -543,15 +523,15 @@ PyMODINIT_FUNC initlua()
 {
     PyObject *m;
 
-    if (PyType_Ready(&LuaType) < 0)
+    if (PyType_Ready(&LuaStateType) < 0)
         return;
     if (PyType_Ready(&LuaFunctionType) < 0)
         return;
 
     m = Py_InitModule3("lua", lua_methods, "Lua bindings.");
 
-    Py_INCREF(&LuaType);
+    Py_INCREF(&LuaStateType);
     Py_INCREF(&LuaFunctionType);
-    PyModule_AddObject(m, "Lua", (PyObject *)&LuaType);
+    PyModule_AddObject(m, "LuaState", (PyObject *)&LuaStateType);
     PyModule_AddObject(m, "LuaFunction", (PyObject *)&LuaFunctionType);
 }
