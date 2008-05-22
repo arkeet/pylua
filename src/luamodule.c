@@ -238,7 +238,6 @@ static const luaL_Reg_named lualibs[] = {
 static PyObject *LuaState_openlib(LuaState *self, PyObject *args)
 {
     char *lib;
-    lua_CFunction fn;
     lua_State *L;
     const luaL_Reg_named *libs;
 
