@@ -10,7 +10,7 @@
 
 #define LOG
 #ifdef LOG
-int Log(const char *format, ...)
+void Log(const char *format, ...)
 {
     va_list ap;
     va_start(ap, format);
@@ -18,22 +18,20 @@ int Log(const char *format, ...)
     va_end(ap);
 }
 #else
-int Log(const char *format, ...)
+void Log(const char *format, ...)
 {
     return 0;
 }
 #endif
-int LogObj(const char *str, void *o)
+void LogObj(const char *str, void *o)
 {
-    int ret;
     PyObject *repr = PyObject_Repr((PyObject *)o);
-    ret = Log("  Obj %s %s\n", str, PyString_AsString(repr));
+    Log("  Obj %s %s\n", str, PyString_AsString(repr));
     Py_XDECREF(repr);
-    return ret;
 }
-int LogLuaTop(const char *str, lua_State *L)
+void LogLuaTop(const char *str, lua_State *L)
 {
-    return Log("  Top %s %d\n", str, lua_gettop(L));
+    Log("  Top %s %d\n", str, lua_gettop(L));
 }
 
 /* LuaObject type *********************************************************/
@@ -226,6 +224,7 @@ static PyObject *LuaState_openlibs(LuaState *self)
 
 static PyObject *LuaState_openlib(LuaState *self, PyObject *args)
 {
+    return NULL; /* not yet implemented */
 }
 
 static PyObject *LuaState_gettop(LuaState *self)
@@ -597,6 +596,7 @@ static PyObject *Lua_topython(LuaState *lua, int index)
         case LUA_TTABLE:
             return Lua_toluaobject(lua, index);
     }
+    return NULL;
 }
 
 static PyObject *Lua_topython_tuple(LuaState *lua, int n)
