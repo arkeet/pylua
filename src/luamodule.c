@@ -230,7 +230,7 @@ static PyObject *LuaState_openlib(LuaState *self, PyObject *args)
 
 static PyObject *LuaState_gettop(LuaState *self)
 {
-    return PyInt_FromSsize_t(lua_gettop(self->L));
+    return PyInt_FromLong(lua_gettop(self->L));
 }
 
 static PyObject *LuaState_eval(LuaState *self, PyObject *args)
