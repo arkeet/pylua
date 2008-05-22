@@ -2,6 +2,7 @@
 #include <Python.h>
 #include <structmember.h>
 #include <lua.h>
+#include <lualib.h>
 #include <lauxlib.h>
 
 #define PYOBJECT "PyObject"
@@ -56,7 +57,7 @@ static int LuaObject_init(LuaObject *self, PyObject *args, PyObject *kwds)
 static PyObject *LuaObject_call(LuaObject *self, PyObject *args, PyObject
         *kwds)
 {
-    size_t n, i;
+    size_t n;
     int oldtop;
     PyObject *result;
     lua_State *L = self->lua->L;
@@ -77,11 +78,6 @@ static PyObject *LuaObject_call(LuaObject *self, PyObject *args, PyObject
     lua_settop(L, oldtop);
     return result;
 }
-
-static PyMethodDef nomethods[] = {
-    {"foo", NULL, METH_NOARGS, NULL},
-    {NULL, NULL, 0, NULL}
-};
 
 static PyObject *LuaObject_getattro(LuaObject *self, PyObject *name)
 {
@@ -235,7 +231,6 @@ static PyObject *LuaState_eval(LuaState *self, PyObject *args)
 {
     char *code;
 
-    int status;
     int oldtop, numresults;
     PyObject *result;
 
@@ -383,7 +378,7 @@ static int lua_obj_gc(lua_State *L)
 
 static int lua_obj_call(lua_State *L)
 {
-    PyObject *o, *args, *ret, *err;
+    PyObject *o, *args, *ret;
     LuaState *lua;
     int nargs, r;
 
@@ -536,7 +531,7 @@ static int Lua_pushpyobject(LuaState *lua, PyObject *o)
     if (PyString_Check(o))
     {
         char *buf;
-        size_t len;
+        ssize_t len;
         PyString_AsStringAndSize(o, &buf, &len);
         lua_pushlstring(L, buf, len);
         return 1;
