@@ -217,9 +217,58 @@ static PyObject *LuaState_openlibs(LuaState *self)
     Py_RETURN_NONE;
 }
 
+typedef struct luaL_Reg_named {
+    const char *pyname;
+    const char *name;
+    lua_CFunction func;
+} luaL_Reg_named;
+
+static const luaL_Reg_named lualibs[] = {
+    {"base",          "",              luaopen_base},
+    {LUA_LOADLIBNAME, LUA_LOADLIBNAME, luaopen_package},
+    {LUA_TABLIBNAME,  LUA_TABLIBNAME,  luaopen_table},
+    {LUA_IOLIBNAME,   LUA_IOLIBNAME,   luaopen_io},
+    {LUA_OSLIBNAME,   LUA_OSLIBNAME,   luaopen_os},
+    {LUA_STRLIBNAME,  LUA_STRLIBNAME,  luaopen_string},
+    {LUA_MATHLIBNAME, LUA_MATHLIBNAME, luaopen_math},
+    {LUA_DBLIBNAME,   LUA_DBLIBNAME,   luaopen_debug},
+    {NULL, NULL, NULL}
+};
+
 static PyObject *LuaState_openlib(LuaState *self, PyObject *args)
 {
-    return NULL; /* not yet implemented */
+    char *lib;
+    lua_CFunction fn;
+    lua_State *L;
+    const luaL_Reg_named *libs;
+
+    L = self->L;
+    libs = lualibs;
+
+    if (!PyArg_ParseTuple(args, "s", &lib))
+        return NULL;
+
+    for (; libs->func; libs++)
+    {
+        if (strcmp(libs->pyname, lib) == 0)
+        {
+            lua_pushcfunction(L, libs->func);
+            lua_pushstring(L, libs->name);
+            lua_call(L, 1, 0);
+            Py_RETURN_NONE;
+        }
+    }
+    PyErr_SetString(PyExc_ValueError, "library name must be one of:"
+            " base"
+            " " LUA_LOADLIBNAME
+            " " LUA_TABLIBNAME
+            " " LUA_IOLIBNAME
+            " " LUA_OSLIBNAME
+            " " LUA_STRLIBNAME
+            " " LUA_MATHLIBNAME
+            " " LUA_DBLIBNAME
+            );
+    return NULL;
 }
 
 static PyObject *LuaState_gettop(LuaState *self)
@@ -273,8 +322,8 @@ static PyObject *LuaState_globals(LuaState *self, PyObject *args)
 static PyMethodDef LuaState_methods[] = {
     {"openlibs", (PyCFunction)LuaState_openlibs, METH_NOARGS,
         "Load the Lua libraries."},
-    {"openlib", (PyCFunction)LuaState_openlib, METH_NOARGS,
-        "Load the Lua libraries."},
+    {"openlib", (PyCFunction)LuaState_openlib, METH_VARARGS,
+        "Load a particular Lua library."},
     {"gettop", (PyCFunction)LuaState_gettop, METH_NOARGS,
         "(debug) Gets the top index of the Lua stack."},
     {"eval", (PyCFunction)LuaState_eval, METH_VARARGS,
