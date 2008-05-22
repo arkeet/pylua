@@ -6,9 +6,9 @@
 
 /* Debug functions **********************************************************/
 
-int Log(const char *format, ...);
-int LogObj(const char *str, void *o);
-int LogLuaTop(const char *str, lua_State *L);
+void Log(const char *format, ...);
+void LogObj(const char *str, void *o);
+void LogLuaTop(const char *str, lua_State *L);
 
 /* Type structs *************************************************************/
 

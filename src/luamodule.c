@@ -8,7 +8,7 @@
 
 /* Debug functions **********************************************************/
 
-#define LOG
+//#define LOG
 #ifdef LOG
 void Log(const char *format, ...)
 {
@@ -20,7 +20,6 @@ void Log(const char *format, ...)
 #else
 void Log(const char *format, ...)
 {
-    return 0;
 }
 #endif
 void LogObj(const char *str, void *o)
