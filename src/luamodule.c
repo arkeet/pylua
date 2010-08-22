@@ -7,6 +7,8 @@
 
 #define PYOBJECT "PyObject"
 
+PyThreadState *_save;
+
 /* Debug functions **********************************************************/
 
 //#define LOG
@@ -279,7 +281,7 @@ static PyObject *LuaState_eval(LuaState *self, PyObject *args)
 {
     char *code;
 
-    int oldtop, numresults;
+    int oldtop, numresults, ret;
     PyObject *result;
 
     if (!PyArg_ParseTuple(args, "s", &code))
@@ -289,7 +291,11 @@ static PyObject *LuaState_eval(LuaState *self, PyObject *args)
 
     if (luaL_loadstring(self->L, code))
     {
-        PyErr_SetString(PyExc_SyntaxError, "error loading Lua code");
+        lua_pushstring(self->L, "error loading Lua code: ");
+        lua_insert(self->L, -2);
+        lua_concat(self->L, 2);
+        PyErr_SetString(PyExc_SyntaxError, lua_tostring(self->L, -1));
+        lua_pop(self->L, 1);
         return NULL;
     }
 
@@ -391,6 +397,7 @@ static PyObject *lua_topyobject(lua_State *L, int index)
 
     result = *(PyObject **)luaL_checkudata(L, index, PYOBJECT);
     Py_XINCREF(result);
+
     return result;
 }
 
@@ -421,6 +428,7 @@ static int lua_obj_gc(lua_State *L)
 
     o = *(PyObject **)luaL_checkudata(L, 1, PYOBJECT);
     Py_XDECREF(o);
+
     return 0;
 }
 
@@ -496,7 +504,9 @@ static int lua_obj_newindex(lua_State *L)
     lua = (LuaState *)lua_touserdata(L, lua_upvalueindex(1));
     o = *(PyObject **)luaL_checkudata(L, 1, PYOBJECT);
     if (PyDict_Check(o))
+    {
         return luaL_error(L, "todo: implement dict __index");
+    }
     else
     {
         key = Lua_topython(lua, 2);
