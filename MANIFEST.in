@@ -1,0 +1,2 @@
+include COPYING MANIFEST.in
+recursive-include src *.h
