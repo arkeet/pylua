@@ -7,9 +7,9 @@ setup(
         version = '0.1',
         description = 'Lua binding',
         author = 'Adrian Keet',
-        author_email = 'demonthing@gmail.com',
+        author_email = 'arkeet@gmail.com',
         license = 'MIT',
-        url = 'https://code.google.com/p/py-lua/',
+        url = 'https://github.com/arkeet/pylua',
         ext_modules=[Extension(
             'lua',
             ['src/luamodule.c'],
