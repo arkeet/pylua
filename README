@@ -1,3 +1,0 @@
-pylua lets you run Lua code from Python very nicely.
-
-Requires liblua to build.
